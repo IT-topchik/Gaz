@@ -4,6 +4,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { createMaterialPalette, updateMaterialsForTheme, MaterialPalette } from './materials';
 import { buildCompleteLngPlant, PlantBuildResult } from './plantModels';
 import { TOUR_STEPS } from '../data/tourData';
+import { PRODUCTION_HEATMAP_ZONES } from '../utils/heatmap';
 
 export interface CameraTelemetry {
   camX: number;
@@ -19,6 +20,17 @@ export interface EngineCallbacks {
   onStepSelect: (stepIndex: number) => void;
   onCameraMoveStart?: () => void;
   onCameraUpdate?: (telemetry: CameraTelemetry) => void;
+}
+
+interface HeatmapZoneVisual {
+  stepIndex: number | null;
+  group: THREE.Group;
+  padMat: THREE.MeshBasicMaterial;
+  auraMat: THREE.MeshBasicMaterial;
+  ringLower: THREE.Mesh;
+  ringUpper: THREE.Mesh;
+  ringMat: THREE.MeshBasicMaterial;
+  baseHeight: number;
 }
 
 export class Plant3DEngine {
@@ -50,6 +62,15 @@ export class Plant3DEngine {
   private progressArray!: Float32Array;
   private mainPipeCurve!: THREE.CatmullRomCurve3;
 
+  // 3D Production Heatmap Overlay
+  private heatmapGroup!: THREE.Group;
+  private heatmapZoneVisuals: HeatmapZoneVisual[] = [];
+  private heatmapPipeMat!: THREE.MeshBasicMaterial;
+  private heatmapTextures: THREE.Texture[] = [];
+  private isHeatmapEnabled = false;
+  private heatmapAlpha = 0;
+  private activeStepIndex = 0;
+
   // Animation & Camera Transition state
   private isNightMode = false;
   private isSoftwareGl = false;
@@ -77,6 +98,7 @@ export class Plant3DEngine {
     this.initLightingAndEnvironment();
     this.initPlantObjects();
     this.initFlowParticles();
+    this.initHeatmapOverlay();
     this.initHotspots();
     this.initEvents();
 
@@ -109,6 +131,7 @@ export class Plant3DEngine {
     this.canvas.style.position = 'absolute';
     this.canvas.style.top = '0';
     this.canvas.style.left = '0';
+    this.canvas.style.touchAction = 'none';
     this.container.appendChild(this.canvas);
 
     this.renderer = new THREE.WebGLRenderer({
@@ -134,9 +157,12 @@ export class Plant3DEngine {
     this.scene.background = bgDay;
     this.scene.fog = new THREE.FogExp2(0xdbe6f2, 0.002);
 
+    const aspect = this.container.clientWidth / Math.max(1, this.container.clientHeight);
+    const initialFov = aspect < 0.85 ? 52 : 38;
+
     this.camera = new THREE.PerspectiveCamera(
-      38,
-      this.container.clientWidth / this.container.clientHeight,
+      initialFov,
+      aspect,
       0.5,
       2500
     );
@@ -146,6 +172,9 @@ export class Plant3DEngine {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
+    this.controls.rotateSpeed = 0.85;
+    this.controls.zoomSpeed = 1.0;
+    this.controls.panSpeed = 0.85;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.02;
     this.controls.minDistance = 15;
     this.controls.maxDistance = 420;
@@ -239,6 +268,190 @@ export class Plant3DEngine {
     this.flowParticles = new THREE.Points(this.particleGeo, this.particleMat);
     this.flowParticles.renderOrder = 3;
     this.scene.add(this.flowParticles);
+  }
+
+  private createRadialHeatmapTexture(
+    coreColor: string,
+    midColor: string,
+    outerColor: string,
+    maxAniso: number
+  ): THREE.CanvasTexture {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const cx = size / 2;
+    const cy = size / 2;
+    const radius = size / 2;
+
+    const grad = ctx.createRadialGradient(cx, cy, 4, cx, cy, radius);
+    grad.addColorStop(0.0, coreColor);
+    grad.addColorStop(0.38, coreColor);
+    grad.addColorStop(0.72, midColor);
+    grad.addColorStop(1.0, outerColor);
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+
+    // Subtle concentric thermal isoline rings for industrial SCADA read
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2;
+    [0.32, 0.56, 0.78].forEach((ratio) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius * ratio, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = maxAniso;
+    this.heatmapTextures.push(tex);
+    return tex;
+  }
+
+  private createVerticalAuraTexture(coreColor: string, midColor: string): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d')!;
+
+    // Bottom of cylinder (v=0 -> y=256) is brightest, fading smoothly toward top (y=0)
+    const grad = ctx.createLinearGradient(0, 256, 0, 0);
+    grad.addColorStop(0.0, coreColor);
+    grad.addColorStop(0.45, midColor);
+    grad.addColorStop(1.0, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 256);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.heatmapTextures.push(tex);
+    return tex;
+  }
+
+  private initHeatmapOverlay(): void {
+    const maxAniso = this.renderer.capabilities.getMaxAnisotropy() || 4;
+    this.heatmapGroup = new THREE.Group();
+    this.heatmapGroup.visible = false;
+
+    PRODUCTION_HEATMAP_ZONES.forEach((zone) => {
+      const zoneGroup = new THREE.Group();
+      zoneGroup.position.set(zone.wx, zone.baseY, zone.wz);
+
+      // 1. Ground / Plinth Thermal Radial Pad
+      const padTex = this.createRadialHeatmapTexture(
+        zone.coreColor,
+        zone.midColor,
+        zone.outerColor,
+        maxAniso
+      );
+      const padMat = new THREE.MeshBasicMaterial({
+        map: padTex,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -4,
+        polygonOffsetUnits: -4
+      });
+      const padGeo = new THREE.PlaneGeometry(zone.radiusX * 2.25, zone.radiusZ * 2.25);
+      const padMesh = new THREE.Mesh(padGeo, padMat);
+      padMesh.rotation.x = -Math.PI / 2;
+      padMesh.renderOrder = 4;
+      zoneGroup.add(padMesh);
+
+      // 2. 3D Volumetric Thermal Shell around active production equipment
+      const auraTex = this.createVerticalAuraTexture(zone.coreColor, zone.midColor);
+      const auraMat = new THREE.MeshBasicMaterial({
+        map: auraTex,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      const avgRadius = (zone.radiusX + zone.radiusZ) * 0.48;
+      const auraGeo = new THREE.CylinderGeometry(avgRadius * 0.9, avgRadius * 1.05, zone.height, 36, 1, true);
+      const auraMesh = new THREE.Mesh(auraGeo, auraMat);
+      auraMesh.position.y = zone.height * 0.5;
+      auraMesh.scale.set(
+        zone.radiusX / Math.max(1, avgRadius),
+        1,
+        zone.radiusZ / Math.max(1, avgRadius)
+      );
+      auraMesh.renderOrder = 4;
+      zoneGroup.add(auraMesh);
+
+      // 3. Elevated Iso-Thermal Contour Rings (animated scan rings)
+      const ringMat = new THREE.MeshBasicMaterial({
+        color: zone.threeColorHex,
+        transparent: true,
+        opacity: 0,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+
+      const ringGeo = new THREE.RingGeometry(avgRadius * 0.92, avgRadius * 1.02, 44);
+      const ringLower = new THREE.Mesh(ringGeo, ringMat);
+      ringLower.rotation.x = -Math.PI / 2;
+      ringLower.position.y = 0.25;
+      ringLower.scale.set(
+        zone.radiusX / Math.max(1, avgRadius),
+        zone.radiusZ / Math.max(1, avgRadius),
+        1
+      );
+      ringLower.renderOrder = 5;
+
+      const ringUpper = new THREE.Mesh(ringGeo.clone(), ringMat);
+      ringUpper.rotation.x = -Math.PI / 2;
+      ringUpper.position.y = zone.height * 0.45;
+      ringUpper.scale.set(
+        (zone.radiusX / Math.max(1, avgRadius)) * 0.85,
+        (zone.radiusZ / Math.max(1, avgRadius)) * 0.85,
+        1
+      );
+      ringUpper.renderOrder = 5;
+
+      zoneGroup.add(ringLower, ringUpper);
+      this.heatmapGroup.add(zoneGroup);
+
+      this.heatmapZoneVisuals.push({
+        stepIndex: zone.stepIndex,
+        group: zoneGroup,
+        padMat,
+        auraMat,
+        ringLower,
+        ringUpper,
+        ringMat,
+        baseHeight: zone.height
+      });
+    });
+
+    // 4. Thermal Pipeline Transfer Corridor Overlay
+    const pipeOverlayGeo = new THREE.TubeGeometry(this.mainPipeCurve, 80, 0.92, 14, false);
+    this.heatmapPipeMat = new THREE.MeshBasicMaterial({
+      color: 0xff5500,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false
+    });
+    const pipeOverlayMesh = new THREE.Mesh(pipeOverlayGeo, this.heatmapPipeMat);
+    pipeOverlayMesh.renderOrder = 4;
+    this.heatmapGroup.add(pipeOverlayMesh);
+
+    this.scene.add(this.heatmapGroup);
+  }
+
+  public setHeatmapEnabled(enabled: boolean): void {
+    this.isHeatmapEnabled = enabled;
+    if (enabled) {
+      this.heatmapGroup.visible = true;
+    }
+  }
+
+  public setActiveStep(stepIndex: number): void {
+    this.activeStepIndex = stepIndex;
   }
 
   private initHotspots(): void {
@@ -343,8 +556,10 @@ export class Plant3DEngine {
   private onResize = (): void => {
     if (!this.container) return;
     const width = this.container.clientWidth;
-    const height = this.container.clientHeight;
-    this.camera.aspect = width / height;
+    const height = Math.max(1, this.container.clientHeight);
+    const aspect = width / height;
+    this.camera.aspect = aspect;
+    this.camera.fov = aspect < 0.85 ? 52 : 38;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
   };
@@ -370,6 +585,7 @@ export class Plant3DEngine {
     const data = TOUR_STEPS[stepIndex];
     if (!data) return;
 
+    this.activeStepIndex = stepIndex;
     this.targetCamPos.set(data.camera.x, data.camera.y, data.camera.z);
     this.targetLookAt.set(data.lookAt.x, data.lookAt.y, data.lookAt.z);
 
@@ -458,6 +674,37 @@ export class Plant3DEngine {
       });
     }
 
+    // Animate 3D Heatmap Overlay with smooth exponential damping
+    const targetHeat = this.isHeatmapEnabled ? 1.0 : 0.0;
+    this.heatmapAlpha = THREE.MathUtils.damp(
+      this.heatmapAlpha,
+      targetHeat,
+      this.isSoftwareGl ? 12.0 : 6.5,
+      camDt
+    );
+
+    if (this.heatmapAlpha > 0.005) {
+      this.heatmapGroup.visible = true;
+      const pulse = 0.92 + Math.sin(time * 2.6) * 0.08;
+      this.heatmapPipeMat.opacity = this.heatmapAlpha * 0.42 * pulse;
+
+      this.heatmapZoneVisuals.forEach((zv, idx) => {
+        const isCurrentStep = zv.stepIndex === this.activeStepIndex;
+        const boost = isCurrentStep ? 1.18 : 0.88;
+        const zonePulse = 0.9 + Math.sin(time * 2.4 + idx * 0.9) * 0.1;
+
+        zv.padMat.opacity = Math.min(0.95, this.heatmapAlpha * 0.78 * boost * zonePulse);
+        zv.auraMat.opacity = Math.min(0.85, this.heatmapAlpha * 0.46 * boost * zonePulse);
+        zv.ringMat.opacity = Math.min(0.95, this.heatmapAlpha * 0.72 * boost);
+
+        // Gently scan the upper iso-thermal ring up and down the active unit
+        const scanProgress = ((time * 0.35 + idx * 0.2) % 1);
+        zv.ringUpper.position.y = 1.2 + scanProgress * (zv.baseHeight * 0.75);
+      });
+    } else if (!this.isHeatmapEnabled && this.heatmapGroup.visible) {
+      this.heatmapGroup.visible = false;
+    }
+
     // Animate Cryogenic pipeline flow particles
     const posAttr = this.particleGeo.attributes.position;
     for (let p = 0; p < this.particleCount; p++) {
@@ -510,6 +757,21 @@ export class Plant3DEngine {
         if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
       });
     });
+
+    if (this.heatmapGroup) {
+      this.heatmapGroup.traverse(child => {
+        const mesh = child as THREE.Mesh;
+        if (mesh.geometry) mesh.geometry.dispose();
+        if (mesh.material) {
+          if (Array.isArray(mesh.material)) {
+            mesh.material.forEach(m => m.dispose());
+          } else {
+            mesh.material.dispose();
+          }
+        }
+      });
+    }
+    this.heatmapTextures.forEach(t => t.dispose());
 
     this.plant.root.traverse(child => {
       const mesh = child as THREE.Mesh;

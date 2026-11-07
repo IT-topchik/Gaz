@@ -20,9 +20,15 @@ interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: (user: UserAccount) => void;
+  onOpenPrivacyPolicy: (tab?: 'policy' | 'consent' | 'rights') => void;
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess }) => {
+export const AuthModal: React.FC<AuthModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess,
+  onOpenPrivacyPolicy
+}) => {
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
   // Form Fields
@@ -31,6 +37,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [consent152FZ, setConsent152FZ] = useState(false);
 
   // Validation States
   const [emailCheck, setEmailCheck] = useState<EmailValidationResult>({ isValid: true });
@@ -114,6 +121,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         setFormFeedback({ type: 'error', message: 'Введенные пароли не совпадают.' });
         return;
       }
+
+      if (!consent152FZ) {
+        setFormFeedback({
+          type: 'error',
+          message: 'В соответствии со ст. 9 ФЗ № 152-ФЗ необходимо подтвердить согласие на обработку персональных данных.'
+        });
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -124,7 +139,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         user = await authService.login(email, password);
         setFormFeedback({ type: 'success', message: 'Авторизация выполнена успешно!' });
       } else {
-        user = await authService.register(email, fullName, password);
+        user = await authService.register(email, fullName, password, consent152FZ);
         setFormFeedback({ type: 'success', message: 'Регистрация инженера завершена!' });
         try {
           confetti({
@@ -150,8 +165,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-md select-none animate-in fade-in duration-200">
-      <div className="relative w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 select-none animate-in fade-in duration-200">
+      <div className="relative w-full max-w-md max-h-[92vh] overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-2xl transition-all">
         {/* Close Button */}
         <button
           onClick={onClose}
@@ -161,7 +176,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         </button>
 
         {/* Tab Switcher */}
-        <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl mb-6">
+        <div className="flex bg-slate-100 dark:bg-slate-800/80 p-1 rounded-2xl mb-5">
           <button
             type="button"
             onClick={() => {
@@ -193,14 +208,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         </div>
 
         {/* Header Title */}
-        <div className="mb-5">
+        <div className="mb-4">
           <h2 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-slate-100">
             {mode === 'login' ? 'Авторизация инженера' : 'Регистрация в цифровом двойнике'}
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
             {mode === 'login'
               ? 'Доступ к управлению моделированием и параметрам криогенных установок'
-              : 'Создание подтвержденной учетной записи с валидацией корпоративных прав'}
+              : 'Создание подтвержденной учетной записи в соответствии с ФЗ № 152-ФЗ'}
           </p>
         </div>
 
@@ -223,7 +238,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
         )}
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           {/* Full Name (Registration only) */}
           {mode === 'register' && (
             <div>
@@ -388,11 +403,44 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
             </div>
           )}
 
+          {/* Mandatory 152-FZ Personal Data Consent Checkbox (Registration only, Art. 9 152-FZ) */}
+          {mode === 'register' && (
+            <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/80">
+              <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={consent152FZ}
+                  onChange={(e) => setConsent152FZ(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer shrink-0"
+                />
+                <span className="text-[11px] leading-snug text-slate-600 dark:text-slate-300">
+                  Я даю{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenPrivacyPolicy('consent')}
+                    className="font-bold text-blue-600 dark:text-cyan-400 underline hover:text-blue-700 cursor-pointer"
+                  >
+                    согласие на обработку персональных данных
+                  </button>{' '}
+                  согласно ст. 9 <strong>ФЗ № 152-ФЗ «О персональных данных»</strong> и подтверждаю ознакомление с{' '}
+                  <button
+                    type="button"
+                    onClick={() => onOpenPrivacyPolicy('policy')}
+                    className="font-bold text-blue-600 dark:text-cyan-400 underline hover:text-blue-700 cursor-pointer"
+                  >
+                    Политикой обработки ПДн
+                  </button>
+                  .
+                </span>
+              </label>
+            </div>
+          )}
+
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={isSubmitting}
-            className="w-full py-3 px-4 rounded-xl font-extrabold text-sm text-white bg-gradient-to-r from-blue-600 via-sky-600 to-blue-700 hover:from-blue-700 hover:to-sky-700 shadow-lg shadow-blue-500/25 transition-all disabled:opacity-60 flex items-center justify-center gap-2 cursor-pointer mt-2"
+            disabled={isSubmitting || (mode === 'register' && !consent152FZ)}
+            className="w-full py-3 px-4 rounded-xl font-extrabold text-sm text-white bg-gradient-to-r from-blue-600 via-sky-600 to-blue-700 hover:from-blue-700 hover:to-sky-700 shadow-lg shadow-blue-500/25 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 cursor-pointer mt-2"
           >
             {isSubmitting ? (
               <span className="flex items-center gap-2">
@@ -407,6 +455,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
             )}
           </button>
         </form>
+
+        {/* 152-FZ Data Localization & Subject Rights Notice Footer */}
+        <div className="mt-4 pt-3.5 border-t border-slate-200/80 dark:border-slate-800 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+          <span className="truncate">
+            Локализация и криптозащита ПДн по <strong>ФЗ № 152-ФЗ (РФ)</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => onOpenPrivacyPolicy('policy')}
+            className="font-bold text-blue-600 dark:text-cyan-400 hover:underline shrink-0 cursor-pointer"
+          >
+            Политика 152-ФЗ →
+          </button>
+        </div>
       </div>
     </div>
   );

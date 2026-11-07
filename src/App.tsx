@@ -4,11 +4,14 @@ import { Header } from './components/Header';
 import { TourHUD } from './components/TourHUD';
 import { MiniMap } from './components/MiniMap';
 import { AuthModal } from './components/AuthModal';
+import { PrivacyPolicyModal } from './components/PrivacyPolicyModal';
 import { TOUR_STEPS } from './data/tourData';
 import { authService } from './services/auth';
 import { appCache } from './services/cache';
 import { UserAccount } from './types/tour';
-import { Compass } from 'lucide-react';
+import { Compass, ShieldCheck } from 'lucide-react';
+
+const COOKIE_CONSENT_KEY = 'gp_152fz_cookie_consent_v1';
 
 export default function App() {
   const canvasMountRef = useRef<HTMLDivElement>(null);
@@ -22,8 +25,16 @@ export default function App() {
     const cachedTheme = appCache.get<'day' | 'night'>('user_preferred_theme');
     return cachedTheme === 'night';
   });
+  const [isHeatmapEnabled, setIsHeatmapEnabled] = useState<boolean>(false);
   const [isZenMode, setIsZenMode] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [privacyModalState, setPrivacyModalState] = useState<{
+    isOpen: boolean;
+    tab: 'policy' | 'consent' | 'rights';
+  }>({ isOpen: false, tab: 'policy' });
+  const [cookieConsentAccepted, setCookieConsentAccepted] = useState<boolean>(() => {
+    return appCache.get<boolean>(COOKIE_CONSENT_KEY) === true;
+  });
   const [currentUser, setCurrentUser] = useState<UserAccount | null>(null);
   const [cacheStats, setCacheStats] = useState(appCache.getStats());
 
@@ -68,6 +79,7 @@ export default function App() {
       {
         onStepSelect: (stepIndex) => {
           setCurrentStepIndex(stepIndex);
+          engine.setActiveStep(stepIndex);
         },
         onCameraMoveStart: () => {
           // If user manually rotates or pans, pause auto tour so camera doesn't jerk
@@ -106,6 +118,13 @@ export default function App() {
       engineRef.current.setNightMode(isNightMode);
     }
   }, [isNightMode]);
+
+  // Update 3D engine on heatmap overlay toggle
+  useEffect(() => {
+    if (engineRef.current) {
+      engineRef.current.setHeatmapEnabled(isHeatmapEnabled);
+    }
+  }, [isHeatmapEnabled]);
 
   // Handle Step change
   const handleSelectStep = (index: number) => {
@@ -152,18 +171,32 @@ export default function App() {
     setCacheStats(appCache.getStats());
   };
 
+  const handleOpenPrivacyPolicy = (tab: 'policy' | 'consent' | 'rights' = 'policy') => {
+    setPrivacyModalState({ isOpen: true, tab });
+  };
+
+  const handleAcceptCookies = () => {
+    appCache.set(COOKIE_CONSENT_KEY, true, 365 * 24 * 60 * 60 * 1000, true);
+    setCookieConsentAccepted(true);
+    setCacheStats(appCache.getStats());
+  };
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-slate-100 dark:bg-slate-950 font-sans">
+    <div
+      data-heatmap={isHeatmapEnabled ? 'active' : 'inactive'}
+      className="relative w-screen h-screen overflow-hidden bg-slate-100 dark:bg-slate-950 font-sans"
+    >
       {/* 3D WebGL Canvas Container (Isolated from React DOM reconciler) */}
       <div ref={canvasMountRef} className="absolute inset-0 z-0" />
 
       {/* Top Header UI */}
-      <div className="absolute top-0 left-0 right-0 p-4 sm:p-6 z-20 pointer-events-none">
+      <div className="absolute top-0 left-0 right-0 p-2.5 sm:p-6 z-20 pointer-events-none">
         <Header
           currentUser={currentUser}
           isNightMode={isNightMode}
           onToggleNightMode={() => setIsNightMode((prev) => !prev)}
           onOpenAuth={() => setIsAuthOpen(true)}
+          onOpenPrivacyPolicy={handleOpenPrivacyPolicy}
           onLogout={handleLogout}
           cacheHitRate={cacheStats.hitRate}
         />
@@ -178,6 +211,8 @@ export default function App() {
         onToggleAutoTour={() => setIsAutoTour((prev) => !prev)}
         isZenMode={isZenMode}
         onToggleZenMode={() => setIsZenMode((prev) => !prev)}
+        isHeatmapEnabled={isHeatmapEnabled}
+        onToggleHeatmap={() => setIsHeatmapEnabled((prev) => !prev)}
       />
 
       {/* Real-time Interactive MiniMap in Bottom-Right Corner */}
@@ -187,7 +222,48 @@ export default function App() {
         onSelectStep={handleSelectStep}
         onTeleportToCoords={handleTeleportToCoords}
         isZenMode={isZenMode}
+        isHeatmapEnabled={isHeatmapEnabled}
       />
+
+      {/* 152-FZ Technical Cookie / Local Storage Consent Banner */}
+      {!cookieConsentAccepted && !isZenMode && (
+        <div
+          className={`absolute ${
+            isHeatmapEnabled ? 'bottom-[242px] sm:bottom-28' : 'bottom-[184px] sm:bottom-16'
+          } left-2.5 right-2.5 sm:right-auto sm:left-5 z-30 sm:max-w-xs p-3 sm:p-3.5 rounded-2xl bg-white/95 dark:bg-slate-900/95 border border-slate-200 dark:border-slate-800 shadow-xl text-xs text-slate-600 dark:text-slate-300 space-y-2 transition-[bottom] duration-200`}
+        >
+          <div className="flex items-start gap-2">
+            <ShieldCheck className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+            <div className="leading-snug text-[11px]">
+              Мы используем локальное кеширование и технические файлы cookie в соответствии с{' '}
+              <button
+                type="button"
+                onClick={() => handleOpenPrivacyPolicy('policy')}
+                className="font-bold text-blue-600 dark:text-cyan-400 underline cursor-pointer"
+              >
+                ФЗ № 152-ФЗ «О персональных данных»
+              </button>
+              .
+            </div>
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => handleOpenPrivacyPolicy('policy')}
+              className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+            >
+              Политика 152-ФЗ
+            </button>
+            <button
+              type="button"
+              onClick={handleAcceptCookies}
+              className="px-3 py-1 rounded-lg text-[11px] font-extrabold bg-blue-600 hover:bg-blue-700 text-white shadow-sm cursor-pointer"
+            >
+              Согласен
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Bottom-left Viewport Controls Hint */}
       <div
@@ -204,6 +280,19 @@ export default function App() {
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}
         onSuccess={handleAuthSuccess}
+        onOpenPrivacyPolicy={handleOpenPrivacyPolicy}
+      />
+
+      {/* 152-FZ Personal Data Policy & Subject Rights Modal */}
+      <PrivacyPolicyModal
+        isOpen={privacyModalState.isOpen}
+        initialTab={privacyModalState.tab}
+        onClose={() => setPrivacyModalState((prev) => ({ ...prev, isOpen: false }))}
+        currentUser={currentUser}
+        onUserDeleted={() => {
+          setCurrentUser(null);
+          setCacheStats(appCache.getStats());
+        }}
       />
     </div>
   );

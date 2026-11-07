@@ -62,6 +62,8 @@ interface StoredUserRecord {
   salt: string;
   passHash: string;
   registeredAt: string;
+  consent152FZAt?: string;
+  consentVersion?: string;
 }
 
 const USERS_STORAGE_KEY = 'gp_registered_users_v3';
@@ -286,6 +288,7 @@ class AuthService {
       if (!users[emailLower]) {
         const salt = `gp_salt_${Math.random().toString(36).slice(2, 10)}`;
         const passHash = await this.hashPassword(seed.password, salt);
+        const nowIso = new Date().toISOString();
         users[emailLower] = {
           id: `usr_${Math.random().toString(36).slice(2, 9)}`,
           email: seed.email,
@@ -293,7 +296,9 @@ class AuthService {
           role: seed.role,
           salt,
           passHash,
-          registeredAt: new Date().toISOString()
+          registeredAt: nowIso,
+          consent152FZAt: nowIso,
+          consentVersion: '152-ФЗ ред. 2026'
         };
         updated = true;
       }
@@ -305,14 +310,21 @@ class AuthService {
   }
 
   /**
-   * Register a new user with full field validation
+   * Register a new user with full field validation and mandatory 152-FZ consent (Art. 9)
    */
   public async register(
     email: string,
     fullName: string,
     password: string,
+    consent152FZ = true,
     role = 'Инженер-технолог СПГ'
   ): Promise<UserAccount> {
+    if (!consent152FZ) {
+      throw new Error(
+        'Согласно ст. 9 Федерального закона № 152-ФЗ «О персональных данных», для регистрации необходимо дать согласие на обработку персональных данных.'
+      );
+    }
+
     const emailNorm = email.trim().toLowerCase();
 
     // 1. Validate email
@@ -340,6 +352,7 @@ class AuthService {
 
     const salt = `gp_salt_${Math.random().toString(36).slice(2, 10)}`;
     const passHash = await this.hashPassword(password, salt);
+    const nowIso = new Date().toISOString();
 
     const newUserRecord: StoredUserRecord = {
       id: `usr_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
@@ -348,7 +361,9 @@ class AuthService {
       role: role || 'Специалист СПГ',
       salt,
       passHash,
-      registeredAt: new Date().toISOString()
+      registeredAt: nowIso,
+      consent152FZAt: nowIso,
+      consentVersion: '152-ФЗ ред. 2026'
     };
 
     users[emailNorm] = newUserRecord;
@@ -359,7 +374,9 @@ class AuthService {
       email: newUserRecord.email,
       fullName: newUserRecord.fullName,
       role: newUserRecord.role,
-      registeredAt: newUserRecord.registeredAt
+      registeredAt: newUserRecord.registeredAt,
+      consent152FZAt: newUserRecord.consent152FZAt,
+      consentVersion: newUserRecord.consentVersion
     };
 
     this.setCurrentSession(user);
@@ -398,11 +415,66 @@ class AuthService {
       email: userRecord.email,
       fullName: userRecord.fullName,
       role: userRecord.role,
-      registeredAt: userRecord.registeredAt
+      registeredAt: userRecord.registeredAt,
+      consent152FZAt: userRecord.consent152FZAt || userRecord.registeredAt,
+      consentVersion: userRecord.consentVersion || '152-ФЗ ред. 2026'
     };
 
     this.setCurrentSession(user);
     return user;
+  }
+
+  /**
+   * Subject Right of Access (ст. 14 ФЗ-152): Export Personal Data card
+   */
+  public exportPersonalData(): Record<string, unknown> {
+    const user = this.currentUser;
+    return {
+      documentType: 'Справка-выписка об обрабатываемых персональных данных субъекта (ст. 14 ФЗ № 152-ФЗ)',
+      generatedAt: new Date().toISOString(),
+      operator: 'ПАО «Газпром» / Цифровой двойник СПГ (Информационная система персональных данных ИСПДн)',
+      legalBasis: [
+        'Статья 6 ч. 1 п. 1 ФЗ № 152-ФЗ (обработка с согласия субъекта персональных данных)',
+        'Статья 9 ФЗ № 152-ФЗ (добровольное, конкретное, информированное и сознательное согласие)',
+        'Статья 18 ч. 5 ФЗ № 152-ФЗ (локализация баз данных на территории РФ)'
+      ],
+      securityMeasures: {
+        passwordStorage: 'Одностороннее криптографическое хеширование PBKDF2-HMAC-SHA256 (80 000 итераций) с индивидуальной солью',
+        protectionLevel: 'УЗ-3 (Постановление Правительства РФ № 1119, Приказ ФСТЭК России № 21)',
+        biometricOrSpecialCategoriesProcessed: false
+      },
+      subjectData: user
+        ? {
+            id: user.id,
+            fullName: user.fullName,
+            email: user.email,
+            role: user.role,
+            registeredAt: user.registeredAt,
+            consent152FZAt: user.consent152FZAt || user.registeredAt,
+            consentVersion: user.consentVersion || '152-ФЗ ред. 2026'
+          }
+        : {
+            status: 'Анонимная сессия (авторизованный профиль отсутствует)',
+            technicalData: 'Обрабатываются только обезличенные настройки темы оформления и локального кеша 3D-сцен'
+          }
+    };
+  }
+
+  /**
+   * Subject Right to Withdraw Consent & Demand Destruction of Personal Data (ст. 21 ч. 5 ФЗ-152)
+   */
+  public revokeConsentAndDeleteAccount(): { deletedEmail: string | null; timestamp: string } {
+    const emailNorm = this.currentUser?.email?.toLowerCase() || null;
+    if (emailNorm) {
+      const users = this.getStoredUsers();
+      delete users[emailNorm];
+      this.saveStoredUsers(users);
+    }
+    this.logout();
+    return {
+      deletedEmail: emailNorm,
+      timestamp: new Date().toISOString()
+    };
   }
 
   public logout(): void {

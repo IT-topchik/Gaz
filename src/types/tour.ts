@@ -33,6 +33,8 @@ export interface UserAccount {
   fullName: string;
   role: string;
   registeredAt: string;
+  consent152FZAt?: string;
+  consentVersion?: string;
   avatarColor?: string;
   settings?: {
     theme?: 'day' | 'night';
