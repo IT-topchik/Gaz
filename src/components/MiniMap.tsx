@@ -225,11 +225,22 @@ export const MiniMap: React.FC<MiniMapProps> = ({
                   strokeDasharray="3 2"
                 />
 
-                {/* Flare Stack Icon (-78, -32) */}
+                {/* Flare Stack Derrick Icon (-78, -32) */}
                 <g transform={`translate(${worldToSvgX(-78)}, ${worldToSvgY(-32)})`}>
                   <circle r="3.5" fill="#f97316" opacity="0.25" />
                   <circle r="2" fill="#f97316" />
                 </g>
+
+                {/* Warehouse, Silos & Drum Yard (-76, +26) */}
+                <rect
+                  x={worldToSvgX(-93)}
+                  y={worldToSvgY(13)}
+                  width={(34 / (WORLD_MAX_X - WORLD_MIN_X)) * SVG_WIDTH}
+                  height={(26 / (WORLD_MAX_Z - WORLD_MIN_Z)) * SVG_HEIGHT}
+                  rx="2"
+                  className="fill-slate-300/75 dark:fill-slate-800/75 stroke-slate-400/60 dark:stroke-slate-700"
+                  strokeWidth="0.8"
+                />
 
                 {/* Technological Process Units 1..5 */}
                 {PLANT_ZONES.map((zone) => {

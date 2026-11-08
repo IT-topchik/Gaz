@@ -456,31 +456,41 @@ export class Plant3DEngine {
 
   private initHotspots(): void {
     const hotspotCoords = [
-      { step: 0, x: -38, y: 17.5, z: 0 },
-      { step: 1, x: -12, y: 26.5, z: 0 },
-      { step: 2, x: 12, y: 24.0, z: -2 },
-      { step: 3, x: 38, y: 20.0, z: 0 },
-      { step: 4, x: 63, y: 17.0, z: 0 }
+      { step: 0, x: -38, y: 18.0, z: 0 },
+      { step: 1, x: -12, y: 27.5, z: 0 },
+      { step: 2, x: 12, y: 26.5, z: -2 },
+      { step: 3, x: 38, y: 23.8, z: 0 },
+      { step: 4, x: 64, y: 19.5, z: 0 }
     ];
 
     hotspotCoords.forEach((h, idx) => {
       const pinGroup = new THREE.Group();
       pinGroup.position.set(h.x, h.y, h.z);
 
-      const circleMat = new THREE.MeshBasicMaterial({ color: 0x0062ff });
-      const pinSphere = new THREE.Mesh(new THREE.SphereGeometry(0.9, 18, 18), circleMat);
+      // Compact high-contrast industrial beacon core
+      const coreMat = new THREE.MeshBasicMaterial({ color: 0x0058e6 });
+      const pinSphere = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), coreMat);
 
+      // Crisp dual technical reticle rings
       const haloMat = new THREE.MeshBasicMaterial({
         color: 0x00d0f5,
         side: THREE.DoubleSide,
         transparent: true,
-        opacity: 0.8,
+        opacity: 0.9,
         depthWrite: false
       });
-      const pinHalo = new THREE.Mesh(new THREE.RingGeometry(1.15, 1.6, 28), haloMat);
-      pinHalo.rotation.x = Math.PI / 2;
+      const pinHalo = new THREE.Mesh(new THREE.RingGeometry(0.82, 1.08, 24), haloMat);
 
-      pinGroup.add(pinSphere, pinHalo);
+      const outerHaloMat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.65,
+        depthWrite: false
+      });
+      const outerHalo = new THREE.Mesh(new THREE.RingGeometry(1.22, 1.34, 24), outerHaloMat);
+
+      pinGroup.add(pinSphere, pinHalo, outerHalo);
       pinGroup.userData = { stepIndex: idx, baseHeight: h.y };
       this.scene.add(pinGroup);
       this.hotspots.push(pinGroup);

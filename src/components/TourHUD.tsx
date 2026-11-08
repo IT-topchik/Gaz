@@ -11,7 +11,6 @@ import {
   Activity,
   Award,
   SlidersHorizontal,
-  Sparkles,
   CheckCircle2,
   Flame
 } from 'lucide-react';
@@ -147,9 +146,10 @@ export const TourHUD: React.FC<TourHUDProps> = ({
                 transition={{ duration: 0.2 }}
                 className="min-w-0"
               >
-                <span className="text-[10px] font-extrabold uppercase tracking-widest text-blue-600 dark:text-cyan-400 flex items-center gap-1.5">
-                  <Sparkles className="w-3 h-3 shrink-0" />
-                  {currentStep.stepOrder}
+                <span className="text-[10px] font-mono font-bold tracking-wider text-blue-600 dark:text-cyan-400 flex items-center gap-1.5">
+                  <span>{currentStep.stepOrder}</span>
+                  <span aria-hidden="true" className="text-slate-400">·</span>
+                  <span className="text-slate-500 dark:text-slate-400">{currentStep.category}</span>
                 </span>
                 <h2 className="text-sm sm:text-lg font-extrabold text-slate-900 dark:text-slate-100 leading-snug mt-0.5">
                   {currentStep.title}
@@ -158,12 +158,9 @@ export const TourHUD: React.FC<TourHUDProps> = ({
             </AnimatePresence>
 
             <div className="flex flex-col items-end gap-1 shrink-0">
-              <span className="text-[9px] sm:text-[10px] font-bold px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-lg bg-blue-50 dark:bg-slate-800 text-blue-600 dark:text-cyan-400 border border-blue-200 dark:border-blue-900/60 whitespace-nowrap shadow-xs">
-                {currentStep.category}
-              </span>
               <button
                 onClick={() => setIsInspectorExpanded(!isInspectorExpanded)}
-                className="px-2 py-0.5 rounded-md bg-slate-100 sm:bg-transparent dark:bg-slate-800 sm:dark:bg-transparent text-[11px] text-blue-600 sm:text-slate-400 hover:text-blue-600 dark:text-cyan-400 sm:dark:text-slate-400 dark:hover:text-cyan-400 font-bold transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200/80 dark:bg-slate-800 dark:hover:bg-slate-700 text-[11px] text-slate-700 dark:text-slate-300 font-bold transition-colors cursor-pointer whitespace-nowrap"
               >
                 {isInspectorExpanded ? 'Свернуть ▲' : 'Телеметрия ▼'}
               </button>
