@@ -38,7 +38,9 @@ const STEP_SHORT_LABELS = [
   'Ректификация',
   'Сжижение',
   'Парк СПГ',
-  'Терминал'
+  'Терминал',
+  'Факел',
+  'Химблок'
 ];
 
 const STEP_MOBILE_LABELS = [
@@ -46,7 +48,9 @@ const STEP_MOBILE_LABELS = [
   'Ректиф.',
   'Сжиж.',
   'Парк',
-  'Терм.'
+  'Терм.',
+  'Факел',
+  'Склад'
 ];
 
 export const TourHUD: React.FC<TourHUDProps> = ({
@@ -332,7 +336,7 @@ export const TourHUD: React.FC<TourHUDProps> = ({
       </motion.div>
 
       {/* Unified Single Bottom Tab / Dock (All controls in one single bottom card) */}
-      <footer className="pointer-events-auto flex flex-col items-center w-full max-w-[830px] mx-auto">
+      <footer className="pointer-events-auto flex flex-col items-center w-full max-w-[940px] mx-auto">
         {isZenMode ? (
           <motion.button
             type="button"
@@ -397,8 +401,8 @@ export const TourHUD: React.FC<TourHUDProps> = ({
 
             {/* Main Unified Controls Row inside the single bottom card */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 sm:gap-1.5 w-full">
-              {/* Step Timeline Pills (All 5 nodes) */}
-              <div className="grid grid-cols-5 sm:flex items-center justify-between flex-1 gap-1 w-full">
+              {/* Step Timeline Pills (All 7 nodes) */}
+              <div className="grid grid-cols-7 sm:flex items-center justify-between flex-1 gap-0.5 sm:gap-1 w-full">
                 {steps.map((st, idx) => {
                   const isActive = idx === currentStepIndex;
                   const isHovered = hoveredStepIdx === idx;
@@ -414,7 +418,7 @@ export const TourHUD: React.FC<TourHUDProps> = ({
                       whileHover={{ y: -2 }}
                       whileTap={{ scale: 0.96 }}
                       onClick={() => onSelectStep(idx)}
-                      className={`relative isolate flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 px-1 sm:px-2 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl text-xs font-bold transition-colors whitespace-nowrap cursor-pointer flex-1 ${
+                      className={`relative isolate flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1 px-0.5 sm:px-1.5 py-1.5 sm:py-2 rounded-xl sm:rounded-2xl text-xs font-bold transition-colors whitespace-nowrap cursor-pointer flex-1 ${
                         isActive
                           ? 'text-white'
                           : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-100/80 dark:hover:bg-slate-800/80'
@@ -432,7 +436,7 @@ export const TourHUD: React.FC<TourHUDProps> = ({
                         />
                       )}
                       <span
-                        className={`relative z-10 w-4 h-4 sm:w-4.5 sm:h-4.5 rounded-full flex items-center justify-center text-[10px] font-extrabold shrink-0 transition-transform ${
+                        className={`relative z-10 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-extrabold shrink-0 transition-transform ${
                           isActive
                             ? 'bg-white/25 text-white scale-105'
                             : isHovered
@@ -442,15 +446,15 @@ export const TourHUD: React.FC<TourHUDProps> = ({
                       >
                         {idx + 1}
                       </span>
-                      <span className="relative z-10 hidden sm:inline tracking-tight text-[11px]">
+                      <span className="relative z-10 hidden sm:inline tracking-tight text-[10.5px]">
                         {STEP_SHORT_LABELS[idx] || st.title.split(' ')[0]}
                       </span>
-                      <span className="relative z-10 sm:hidden text-[9px] font-extrabold leading-tight tracking-tight">
+                      <span className="relative z-10 sm:hidden text-[8px] font-extrabold leading-tight tracking-tight">
                         {STEP_MOBILE_LABELS[idx]}
                       </span>
                       {isHeatmapEnabled && zoneData && (
                         <span
-                          className={`relative z-10 font-mono text-[8px] font-extrabold px-1 rounded shrink-0 ${
+                          className={`relative z-10 hidden md:inline font-mono text-[8px] font-extrabold px-1 rounded shrink-0 ${
                             isActive
                               ? 'bg-black/25 text-white'
                               : isPeakZone

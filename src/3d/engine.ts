@@ -460,7 +460,9 @@ export class Plant3DEngine {
       { step: 1, x: -12, y: 27.5, z: 0 },
       { step: 2, x: 12, y: 26.5, z: -2 },
       { step: 3, x: 38, y: 23.8, z: 0 },
-      { step: 4, x: 64, y: 19.5, z: 0 }
+      { step: 4, x: 64, y: 19.5, z: 0 },
+      { step: 5, x: -78, y: 29.0, z: -32 },
+      { step: 6, x: -76, y: 15.5, z: 26 }
     ];
 
     hotspotCoords.forEach((h, idx) => {

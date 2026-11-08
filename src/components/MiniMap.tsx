@@ -42,7 +42,9 @@ const PLANT_ZONES = [
   { id: 1, label: '2', name: 'Фракционирование', wx: -12, wz: 0, w: 20, d: 26, heatColor: '#ef4444' },
   { id: 2, label: '3', name: 'Сжижение MCHE', wx: 12, wz: 0, w: 24, d: 26, heatColor: '#dc2626' },
   { id: 3, label: '4', name: 'Парк СПГ', wx: 38, wz: -2, w: 22, d: 42, heatColor: '#10b981' },
-  { id: 4, label: '5', name: 'Терминал / Arc7', wx: 68, wz: 0, w: 24, d: 62, heatColor: '#f97316' }
+  { id: 4, label: '5', name: 'Терминал / Arc7', wx: 68, wz: 0, w: 24, d: 62, heatColor: '#f97316' },
+  { id: 5, label: '6', name: 'Факельная мачта', wx: -78, wz: -32, w: 18, d: 18, heatColor: '#ef4444' },
+  { id: 6, label: '7', name: 'Химблок и ЗИП', wx: -76, wz: 26, w: 32, d: 24, heatColor: '#10b981' }
 ];
 
 export const MiniMap: React.FC<MiniMapProps> = ({
@@ -225,24 +227,16 @@ export const MiniMap: React.FC<MiniMapProps> = ({
                   strokeDasharray="3 2"
                 />
 
-                {/* Flare Stack Derrick Icon (-78, -32) */}
-                <g transform={`translate(${worldToSvgX(-78)}, ${worldToSvgY(-32)})`}>
-                  <circle r="3.5" fill="#f97316" opacity="0.25" />
-                  <circle r="2" fill="#f97316" />
-                </g>
-
-                {/* Warehouse, Silos & Drum Yard (-76, +26) */}
-                <rect
-                  x={worldToSvgX(-93)}
-                  y={worldToSvgY(13)}
-                  width={(34 / (WORLD_MAX_X - WORLD_MIN_X)) * SVG_WIDTH}
-                  height={(26 / (WORLD_MAX_Z - WORLD_MIN_Z)) * SVG_HEIGHT}
-                  rx="2"
-                  className="fill-slate-300/75 dark:fill-slate-800/75 stroke-slate-400/60 dark:stroke-slate-700"
-                  strokeWidth="0.8"
+                {/* Flare Gas Header Line from Node 1 (-38, 0) to Node 6 Flare (-78, -32) */}
+                <polyline
+                  points={`${worldToSvgX(-38)},${worldToSvgY(0)} ${worldToSvgX(-62)},${worldToSvgY(0)} ${worldToSvgX(-62)},${worldToSvgY(-32)} ${worldToSvgX(-78)},${worldToSvgY(-32)}`}
+                  fill="none"
+                  stroke="#f59e0b"
+                  strokeWidth="1.4"
+                  strokeDasharray="2 2"
                 />
 
-                {/* Technological Process Units 1..5 */}
+                {/* Technological Process Units 1..7 */}
                 {PLANT_ZONES.map((zone) => {
                   const zx = worldToSvgX(zone.wx - zone.w / 2);
                   const zy = worldToSvgY(zone.wz - zone.d / 2);
