@@ -192,6 +192,54 @@ function buildSafetyCagedLadder(
   return ladder;
 }
 
+/**
+ * Builds an industrial orthogonal pipeline with 90-degree forged elbows and end flanges
+ * so that pipes never float or curve away from vessel shells.
+ */
+function buildSegmentedPipeRun(
+  points: THREE.Vector3[],
+  radius: number,
+  mat: THREE.Material,
+  elbowMat: THREE.Material
+): THREE.Group {
+  const group = new THREE.Group();
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    if (i === 0 || i === points.length - 1) {
+      const collar = new THREE.Mesh(
+        new THREE.SphereGeometry(radius * 1.38, 14, 12),
+        elbowMat
+      );
+      collar.position.copy(p);
+      group.add(collar);
+    } else {
+      const elbow = new THREE.Mesh(
+        new THREE.SphereGeometry(radius * 1.24, 14, 12),
+        elbowMat
+      );
+      elbow.position.copy(p);
+      group.add(elbow);
+    }
+
+    if (i < points.length - 1) {
+      const next = points[i + 1];
+      const dir = new THREE.Vector3().subVectors(next, p);
+      const len = dir.length();
+      if (len > 0.001) {
+        const seg = new THREE.Mesh(
+          new THREE.CylinderGeometry(radius, radius, len, 14),
+          mat
+        );
+        seg.position.copy(p).addScaledVector(dir, 0.5);
+        seg.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
+        seg.castShadow = true;
+        group.add(seg);
+      }
+    }
+  }
+  return group;
+}
+
 export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildResult {
   const root = new THREE.Group();
   const animatedCoolers: THREE.Mesh[] = [];
@@ -480,17 +528,22 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
       tower.add(band);
     }
 
-    // External downcomer & regeneration gas header pipe with ASME flanges
-    const downcomer = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 14.2, 14), materials.steelTruss);
-    downcomer.position.set(-2.65, 9.2, 0);
-    downcomer.castShadow = true;
-    tower.add(downcomer);
+    // External downcomer & regeneration gas header pipe with 90-deg elbows entering dome & skirt
+    const towerPipe = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(0, 16.6, 0),
+        new THREE.Vector3(0, 17.55, 0),
+        new THREE.Vector3(-2.65, 17.55, 0),
+        new THREE.Vector3(-2.65, 2.2, 0),
+        new THREE.Vector3(-1.85, 2.2, 0)
+      ],
+      0.26,
+      materials.steelTruss,
+      materials.darkAccent
+    );
+    tower.add(towerPipe);
 
-    const topElbow = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.56, 0.56), materials.steelTruss);
-    topElbow.position.set(-2.1, 16.3, 0);
-    tower.add(topElbow);
-
-    // 3 Circular grated maintenance platforms with safety yellow handrails
+    // 3 Circular grated maintenance platforms with safety yellow handrails & vertical stanchions
     for (const pY of [5.2, 10.2, 15.2]) {
       const plat = new THREE.Mesh(new THREE.CylinderGeometry(3.15, 3.15, 0.22, 24), materials.steelGrating);
       plat.position.y = pY;
@@ -503,6 +556,13 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
       railMid.rotation.x = Math.PI / 2;
       railMid.position.y = pY + 0.48;
       tower.add(railTop, railMid);
+
+      for (let p = 0; p < 8; p++) {
+        const ang = (p / 8) * Math.PI * 2;
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.98, 6), materials.safetyYellow);
+        post.position.set(Math.cos(ang) * 3.13, pY + 0.48, Math.sin(ang) * 3.13);
+        tower.add(post);
+      }
     }
 
     const towerLadder = buildSafetyCagedLadder(15.4, materials);
@@ -512,6 +572,42 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
 
     sepGroup.add(tower);
   }
+
+  // Feed gas collector manifold connecting the 3 horizontal separator drums to the adsorption towers
+  const sepManifold = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-3.4, 6.25, -7.2),
+      new THREE.Vector3(-3.4, 7.2, -7.2),
+      new THREE.Vector3(-3.4, 7.2, 7.2),
+      new THREE.Vector3(-3.4, 6.25, 7.2)
+    ],
+    0.26,
+    materials.gpBlue,
+    materials.darkAccent
+  );
+  const sepMidTie = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-3.4, 6.25, 0),
+      new THREE.Vector3(-3.4, 7.2, 0),
+      new THREE.Vector3(6.4, 7.2, 0),
+      new THREE.Vector3(6.4, 7.2, -4.5),
+      new THREE.Vector3(6.4, 5.2, -4.5)
+    ],
+    0.26,
+    materials.gpBlue,
+    materials.darkAccent
+  );
+  const sepSouthTie = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(6.4, 7.2, 0),
+      new THREE.Vector3(6.4, 7.2, 4.5),
+      new THREE.Vector3(6.4, 5.2, 4.5)
+    ],
+    0.26,
+    materials.gpBlue,
+    materials.darkAccent
+  );
+  sepGroup.add(sepManifold, sepMidTie, sepSouthTie);
 
   // High-pressure Nitrogen & Calibration Gas Bottle Rack ("Gastank metal bottle")
   const bottleRack = new THREE.Group();
@@ -582,33 +678,61 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
       colGroup.add(ring);
     }
 
-    // Overhead vapor gooseneck line descending down to reflux condenser
-    const gooseTop = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.42, 0.42), materials.steelTruss);
-    gooseTop.position.set(s.r * 0.65, s.h + 0.35, 0);
-    const vaporDrop = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.24, 0.24, s.h - 3.5, 12),
-      materials.steelTruss
-    );
-    vaporDrop.position.set(s.r + 0.85, s.h / 2 + 1.5, 0);
-    vaporDrop.castShadow = true;
-    colGroup.add(gooseTop, vaporDrop);
+    // Exact top apex of DIN 28011 dome: body.y + (s.h - 4.5)/2 + s.r * 0.26 = s.h - 1.05 + s.r * 0.26
+    const domeApexY = s.h - 1.05 + s.r * 0.26;
+    const dropX = s.r + 0.85;
 
-    // Multi-tier grated platforms & handrails
+    // Overhead vapor gooseneck line rising directly out of top dome apex and descending to base/reboiler
+    const overheadVaporPipe = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(0, domeApexY - 0.35, 0),
+        new THREE.Vector3(0, domeApexY + 0.65, 0),
+        new THREE.Vector3(dropX, domeApexY + 0.65, 0),
+        new THREE.Vector3(dropX, 2.2, 0),
+        new THREE.Vector3(s.r * 0.75, 2.2, 0)
+      ],
+      0.24,
+      materials.steelTruss,
+      materials.darkAccent
+    );
+    colGroup.add(overheadVaporPipe);
+
+    // Top reflux return nozzle connecting vertical drop pipe directly into upper column shell
+    const refluxNozzle = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(dropX, s.h - 2.8, 0),
+        new THREE.Vector3(s.r * 0.78, s.h - 2.8, 0)
+      ],
+      0.2,
+      materials.gpCyan,
+      materials.darkAccent
+    );
+    colGroup.add(refluxNozzle);
+
+    // Multi-tier grated platforms, handrails & vertical stanchion posts
     for (let lvl = 5.5; lvl < s.h; lvl += 5.2) {
+      const platR = s.r + 1.05;
       const plat = new THREE.Mesh(
-        new THREE.CylinderGeometry(s.r + 1.05, s.r + 1.05, 0.22, 24),
+        new THREE.CylinderGeometry(platR, platR, 0.22, 24),
         materials.steelGrating
       );
       plat.position.y = lvl;
       colGroup.add(plat);
 
       const rail = new THREE.Mesh(
-        new THREE.TorusGeometry(s.r + 1.05, 0.055, 8, 24),
+        new THREE.TorusGeometry(platR, 0.055, 8, 24),
         materials.safetyYellow
       );
       rail.rotation.x = Math.PI / 2;
       rail.position.y = lvl + 0.9;
       colGroup.add(rail);
+
+      for (let p = 0; p < 8; p++) {
+        const ang = (p / 8) * Math.PI * 2;
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.92, 6), materials.safetyYellow);
+        post.position.set(Math.cos(ang) * (platR - 0.02), lvl + 0.45, Math.sin(ang) * (platR - 0.02));
+        colGroup.add(post);
+      }
     }
 
     // Caged safety ladder
@@ -616,11 +740,14 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
     colLadder.position.set(0, 0, s.r + 1.15);
     colGroup.add(colLadder);
 
-    // Adjacent Kettle Reboiler & Reflux Drum at base of each column
+    // Adjacent Kettle Reboiler & Reflux Drum at base of each column + Thermosyphon Connecting Pipes
     const reboiler = new THREE.Group();
-    reboiler.position.set(idx === 2 ? 0 : 6.2, 2.2, idx === 2 ? 6.5 : 0);
+    const rebX = idx === 2 ? 0 : 5.4;
+    const rebZ = idx === 2 ? 5.6 : 0;
+    reboiler.position.set(rebX, 2.2, rebZ);
+
     const rebBody = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.05, 1.05, 5.2, 20),
+      new THREE.CylinderGeometry(1.05, 1.05, 4.8, 20),
       idx === 0 ? materials.gpBlue : materials.baseClay
     );
     rebBody.rotation.z = Math.PI / 2;
@@ -630,16 +757,82 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
       materials.darkAccent
     );
     rebHead.rotation.z = Math.PI / 2;
-    rebHead.position.x = 2.6;
-    const rebSaddle1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.6, 1.8), materials.darkAccent);
-    rebSaddle1.position.set(-1.6, -1.2, 0);
+    rebHead.position.x = 2.4;
+    const rebSaddle1 = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.8, 1.8), materials.darkAccent);
+    rebSaddle1.position.set(-1.5, -1.3, 0);
     const rebSaddle2 = rebSaddle1.clone();
-    rebSaddle2.position.x = 1.6;
+    rebSaddle2.position.x = 1.5;
     reboiler.add(rebBody, rebHead, rebSaddle1, rebSaddle2);
     colGroup.add(reboiler);
 
+    // Connect column shell to Kettle Reboiler with Liquid Feed + Vapor Return Thermosyphon Pipes
+    if (idx !== 2) {
+      const rebFeedPipe = buildSegmentedPipeRun(
+        [
+          new THREE.Vector3(s.r * 0.75, 2.2, 0),
+          new THREE.Vector3(rebX - 2.2, 2.2, 0)
+        ],
+        0.24,
+        materials.steelTruss,
+        materials.darkAccent
+      );
+      const rebVaporReturn = buildSegmentedPipeRun(
+        [
+          new THREE.Vector3(rebX + 0.4, 2.9, 0),
+          new THREE.Vector3(rebX + 0.4, 4.3, 0),
+          new THREE.Vector3(s.r * 0.82, 4.3, 0)
+        ],
+        0.26,
+        materials.gpBlue,
+        materials.darkAccent
+      );
+      colGroup.add(rebFeedPipe, rebVaporReturn);
+    } else {
+      const rebFeedPipeZ = buildSegmentedPipeRun(
+        [
+          new THREE.Vector3(0, 2.2, s.r * 0.75),
+          new THREE.Vector3(0, 2.2, rebZ - 0.8)
+        ],
+        0.24,
+        materials.steelTruss,
+        materials.darkAccent
+      );
+      const rebVaporReturnZ = buildSegmentedPipeRun(
+        [
+          new THREE.Vector3(0, 2.9, rebZ),
+          new THREE.Vector3(0, 4.3, rebZ),
+          new THREE.Vector3(0, 4.3, s.r * 0.82)
+        ],
+        0.26,
+        materials.gpBlue,
+        materials.darkAccent
+      );
+      colGroup.add(rebFeedPipeZ, rebVaporReturnZ);
+    }
+
     fracGroup.add(colGroup);
   });
+
+  // Inter-column overhead process transfer headers connecting Deethanizer -> Depropanizer -> Debutanizer
+  const interColHeader1 = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-4.8, 5.2, -5.2),
+      new THREE.Vector3(-4.8, 5.2, 4.8)
+    ],
+    0.24,
+    materials.gpCyan,
+    materials.darkAccent
+  );
+  const interColHeader2 = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-4.8, 5.2, -5.2),
+      new THREE.Vector3(4.5, 5.2, -5.5)
+    ],
+    0.24,
+    materials.gpBlue,
+    materials.darkAccent
+  );
+  fracGroup.add(interColHeader1, interColHeader2);
 
   // Heavy structural steel lattice superstructure ("Industrial Platform")
   const trussFrame = new THREE.Group();
@@ -739,21 +932,60 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
     mcheGroup.add(girthFlange);
   }
 
-  // External Mixed Refrigerant (MR) vertical manifold risers with ASME flanges
+  // External Mixed Refrigerant (MR) vertical manifold risers with top & intermediate nozzles entering MCHE shells
   for (const angle of [0.6, 2.1, -1.8]) {
-    const rx = Math.cos(angle) * 4.55;
-    const rz = Math.sin(angle) * 4.55;
-    const mrRiser = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 19.5, 16), materials.panelWhite);
-    mrRiser.position.set(rx, 12.2, rz);
-    mrRiser.castShadow = true;
-    mcheGroup.add(mrRiser);
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const rx = cosA * 4.55;
+    const rz = sinA * 4.55;
+
+    // Main vertical riser connected at base pedestal (y=2.2) and entering Upper Cold Bundle shell (y=21.8)
+    const mrRiserRun = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(cosA * 3.4, 2.2, sinA * 3.4),
+        new THREE.Vector3(rx, 2.2, rz),
+        new THREE.Vector3(rx, 21.8, rz),
+        new THREE.Vector3(cosA * 2.85, 21.8, sinA * 2.85)
+      ],
+      0.34,
+      materials.panelWhite,
+      materials.darkAccent
+    );
+    mcheGroup.add(mrRiserRun);
+
+    // Intermediate Warm Bundle injection nozzle entering Lower MCHE shell (y=14.2, r=4.1)
+    const mrMidNozzle = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(rx, 14.2, rz),
+        new THREE.Vector3(cosA * 3.5, 14.2, sinA * 3.5)
+      ],
+      0.28,
+      materials.gpCyan,
+      materials.darkAccent
+    );
+    mcheGroup.add(mrMidNozzle);
 
     const mrValve = buildManualGateValve(1.2, materials, true);
     mrValve.position.set(rx, 5.2, rz);
     mcheGroup.add(mrValve);
   }
 
-  // 4-Tier 360-degree grated service catwalks, safety yellow railings & elevator hoist tower
+  // Top MCHE Dome Cryogenic LNG Outlet Header descending from dome apex black junction sphere (0, 29.55, 0) to base manifold
+  const mcheTopOutlet = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(0, 28.9, 0),
+      new THREE.Vector3(0, 29.55, 0),
+      new THREE.Vector3(0, 29.55, 3.95),
+      new THREE.Vector3(0, 2.8, 3.95),
+      new THREE.Vector3(0, 2.8, 2.2)
+    ],
+    0.3,
+    materials.gpCyan,
+    materials.darkAccent
+  );
+  mcheGroup.add(mcheTopOutlet);
+
+  // 4-Tier 360-degree grated service catwalks, safety yellow railings & vertical stanchion posts
   for (const levelY of [6.8, 12.8, 18.8, 24.8]) {
     const platR = levelY > 17 ? 4.45 : 5.15;
     const catwalk = new THREE.Mesh(
@@ -770,22 +1002,92 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
     guardRail.rotation.x = Math.PI / 2;
     guardRail.position.y = levelY + 0.92;
     mcheGroup.add(guardRail);
+
+    for (let p = 0; p < 12; p++) {
+      const ang = (p / 12) * Math.PI * 2;
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.94, 6), materials.safetyYellow);
+      post.position.set(Math.cos(ang) * (platR - 0.03), levelY + 0.46, Math.sin(ang) * (platR - 0.03));
+      mcheGroup.add(post);
+    }
   }
 
-  // Industrial Hoist / Elevator Lattice Tower alongside MCHE
-  const mcheShaft = new THREE.Mesh(new THREE.BoxGeometry(1.4, 25.5, 1.4), materials.steelTruss);
-  mcheShaft.position.set(-4.8, 12.75, 0);
+  // Industrial Hoist / Elevator Lattice Tower alongside MCHE connected to top catwalk
+  const mcheShaft = new THREE.Mesh(new THREE.BoxGeometry(1.4, 25.0, 1.4), materials.steelTruss);
+  mcheShaft.position.set(-4.8, 12.5, 0);
   mcheShaft.castShadow = true;
-  mcheGroup.add(mcheShaft);
+  const mcheShaftCap = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.4, 1.65), materials.darkAccent);
+  mcheShaftCap.position.set(-4.8, 25.1, 0);
+  mcheGroup.add(mcheShaft, mcheShaftCap);
 
-  // Jib crane boom at top of MCHE for maintenance bundle lifting
-  const craneBoom = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.35, 0.35), materials.safetyYellow);
-  craneBoom.position.set(-1.5, 28.2, 0);
-  const craneMast = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 2.8, 12), materials.safetyYellow);
-  craneMast.position.set(-3.8, 27.0, 0);
-  mcheGroup.add(craneBoom, craneMast);
+  // Top yellow line/boom rising from mcheShaftCap (-4.8, 25.1, 0) to (-4.8, 29.55, 0) and entering directly into the black sphere at (0, 29.55, 0)
+  const craneBase = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, 0.6, 16), materials.darkAccent);
+  craneBase.position.set(-4.8, 25.4, 0);
+
+  const topDomeJunctionSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.46, 20, 20),
+    materials.darkAccent
+  );
+  topDomeJunctionSphere.position.set(0, 29.55, 0);
+  topDomeJunctionSphere.castShadow = true;
+
+  const topYellowRun = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-4.8, 25.2, 0),
+      new THREE.Vector3(-4.8, 29.55, 0),
+      new THREE.Vector3(0, 29.55, 0)
+    ],
+    0.26,
+    materials.safetyYellow,
+    materials.darkAccent
+  );
+
+  // Diagonal structural knee-brace from (-4.8, 27.7, 0) to (-2.95, 29.55, 0)
+  const craneBrace = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-4.8, 27.7, 0),
+      new THREE.Vector3(-2.95, 29.55, 0)
+    ],
+    0.12,
+    materials.safetyYellow,
+    materials.darkAccent
+  );
+
+  mcheGroup.add(craneBase, topDomeJunctionSphere, topYellowRun, craneBrace);
 
   liqGroup.add(mcheGroup);
+
+  // Overhead Mixed-Refrigerant (MR) High-Pressure Transfer Bridges between Compressor Hall & MCHE Tower
+  const mrBridgeHigh = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(1.2, 8.2, -4.5),
+      new THREE.Vector3(-4.8, 8.2, -4.5),
+      new THREE.Vector3(-4.8, 8.2, -2.2)
+    ],
+    0.34,
+    materials.gpBlue,
+    materials.darkAccent
+  );
+  const mrBridgeLow = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(1.2, 6.4, 2.2),
+      new THREE.Vector3(-4.8, 6.4, 2.2),
+      new THREE.Vector3(-4.8, 6.4, -2.2)
+    ],
+    0.32,
+    materials.panelWhite,
+    materials.darkAccent
+  );
+  // Tie-in from MCHE & Compressor Hall directly into the Main Overhead Pipe Rack (World Z=0, Y=3.8)
+  const mcheToMainRack = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-4.8, 2.8, -2.2),
+      new THREE.Vector3(-4.8, 2.8, 0)
+    ],
+    0.38,
+    materials.panelWhite,
+    materials.darkAccent
+  );
+  liqGroup.add(mrBridgeHigh, mrBridgeLow, mcheToMainRack);
 
   // Turbo-Compressor Hall ("Factory with chimneys" & "refinery building")
   const compHallGroup = new THREE.Group();
@@ -916,12 +1218,12 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
       tHolder.add(windGirder);
     }
 
-    // Domed geodesic roof with radial structural ribs
+    // Domed geodesic roof with full hemisphere base sitting flush on concrete wall at Y=14.5
     const tDome = new THREE.Mesh(
-      new THREE.SphereGeometry(9.4, 48, 20, 0, Math.PI * 2, 0, Math.PI / 2.2),
+      new THREE.SphereGeometry(9.4, 48, 24, 0, Math.PI * 2, 0, Math.PI / 2),
       materials.baseClay
     );
-    tDome.scale.y = 0.55;
+    tDome.scale.y = 0.52;
     tDome.position.y = 14.5;
     tDome.castShadow = true;
     tHolder.add(tDome);
@@ -938,36 +1240,90 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
     stripe.position.y = 11.6;
     tHolder.add(stripe);
 
-    // Roof Pump Platform, Submerged Cryogenic Pump Wells (3 columns) & BOG Collector Header
-    // Dome apex is at 14.5 + 9.4 * 0.48 = 19.01, so platform sits flush at Y=18.95
-    const roofPlatform = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.35, 4.2), materials.steelGrating);
-    roofPlatform.position.set(0, 18.95, 0);
+    // Roof Pump Platform supported by 4 steel legs anchored deep into the tank dome
+    const roofPlatform = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.4, 4.2), materials.steelGrating);
+    roofPlatform.position.set(0, 19.1, 0);
     tHolder.add(roofPlatform);
 
+    for (const [lx, lz] of [[-2.4, -1.7], [2.4, -1.7], [-2.4, 1.7], [2.4, 1.7]]) {
+      const platLeg = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 2.2, 10), materials.steelTruss);
+      platLeg.position.set(lx, 18.0, lz);
+      tHolder.add(platLeg);
+    }
+
     for (const px of [-1.6, 0, 1.6]) {
-      const pumpColumn = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 3.0, 16), materials.gpBlue);
-      pumpColumn.position.set(px, 20.4, 0);
+      // Extend pump column down to y=17.0 so it penetrates solidly through roofPlatform into the dome
+      const pumpColumn = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 5.2, 16), materials.gpBlue);
+      pumpColumn.position.set(px, 19.5, 0);
       pumpColumn.castShadow = true;
+      const baseFlange = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.66, 0.35, 16), materials.darkAccent);
+      baseFlange.position.set(px, 19.35, 0);
       const pumpMotorHead = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.9, 16), materials.darkAccent);
       pumpMotorHead.position.set(px, 22.1, 0);
       const psvValve = buildManualGateValve(0.85, materials, true);
       psvValve.position.set(px, 22.6, 0);
-      tHolder.add(pumpColumn, pumpMotorHead, psvValve);
+      tHolder.add(pumpColumn, baseFlange, pumpMotorHead, psvValve);
     }
 
     // External Spiral Stairway & Vertical Elevator Tower ("Silo Lowpoly" / "Oil Tank")
-    const serviceTower = new THREE.Mesh(new THREE.BoxGeometry(1.45, 19.0, 1.45), materials.steelTruss);
-    serviceTower.position.set(-10.1, 9.5, 0);
+    const serviceTower = new THREE.Mesh(new THREE.BoxGeometry(1.5, 19.3, 1.5), materials.steelTruss);
+    serviceTower.position.set(-10.1, 9.65, 0);
     serviceTower.castShadow = true;
     tHolder.add(serviceTower);
 
-    const topBridge = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.32, 1.3), materials.steelGrating);
-    topBridge.position.set(-5.0, 18.95, 0);
-    const bridgeRailL = new THREE.Mesh(new THREE.BoxGeometry(10.2, 0.75, 0.06), materials.safetyYellow);
-    bridgeRailL.position.set(-5.0, 19.45, 0.62);
+    // Roof access catwalk bridge from roofPlatform (x=0) to serviceTower (x=-10.1) with intermediate dome support struts
+    const topBridge = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.34, 1.4), materials.steelGrating);
+    topBridge.position.set(-5.0, 19.1, 0);
+    const bridgeRailL = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.75, 0.06), materials.safetyYellow);
+    bridgeRailL.position.set(-5.0, 19.55, 0.64);
     const bridgeRailR = bridgeRailL.clone();
-    bridgeRailR.position.z = -0.62;
+    bridgeRailR.position.z = -0.64;
     tHolder.add(topBridge, bridgeRailL, bridgeRailR);
+
+    for (const bx of [-4.6, -7.5]) {
+      const bridgeStrut = new THREE.Mesh(new THREE.BoxGeometry(0.24, 3.8, 0.9), materials.steelTruss);
+      bridgeStrut.position.set(bx, 17.4, 0);
+      const pipeShoe = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.35, 0.24), materials.steelTruss);
+      pipeShoe.position.set(bx, 19.75, 0);
+      tHolder.add(bridgeStrut, pipeShoe);
+    }
+
+    // Cryogenic LNG Roof Collector Manifold running straight through all 3 pump columns (z=0, y=20.45),
+    // supported along topBridge, descending inside serviceTower (x=-10.1), and connecting into Main Pipe Rack (World Z=0, Y=3.8)
+    const rackLocalZ = -zT + 2.0;
+    const lngTankHeader = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(1.6, 20.45, 0),
+        new THREE.Vector3(-10.1, 20.45, 0),
+        new THREE.Vector3(-10.1, 2.8, 0),
+        new THREE.Vector3(-10.1, 2.8, rackLocalZ)
+      ],
+      0.32,
+      materials.panelWhite,
+      materials.darkAccent
+    );
+    tHolder.add(lngTankHeader);
+
+    // Boil-Off Gas (BOG) Vapor Recovery Line rising out of dome through roofPlatform, running along topBridge,
+    // descending down serviceTower, and connecting into Main Pipe Rack BOG Header
+    const bogTankHeader = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(0.8, 17.8, -0.45),
+        new THREE.Vector3(0.8, 19.65, -0.45),
+        new THREE.Vector3(-10.1, 19.65, -0.45),
+        new THREE.Vector3(-10.1, 2.8, -0.45),
+        new THREE.Vector3(-10.1, 2.8, rackLocalZ + 0.95)
+      ],
+      0.24,
+      materials.gpCyan,
+      materials.darkAccent
+    );
+    tHolder.add(bogTankHeader);
+
+    // Ground T-stanchion supporting the horizontal tank-to-rack cryogenic pipeline
+    const tankPipeSupport = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.6, 0.32), materials.steelTruss);
+    tankPipeSupport.position.set(-10.1, 1.3, rackLocalZ * 0.5);
+    tHolder.add(tankPipeSupport);
 
     // Secondary containment bund dike wall around each tank
     const bundMat = materials.panelWhite.clone();
@@ -980,26 +1336,57 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
     tankGroup.add(tHolder);
   }
 
-  // Horizontal Bullet LPG Storage Tank Skid ("LPG Storage Tank Low-Poly 3D Model") between main tanks
+  // Horizontal Bullet LPG Storage Tank Skid ("LPG Storage Tank Low-Poly 3D Model") with Orthogonal Main Rack Tie-In
   const lpgBulletGroup = new THREE.Group();
-  lpgBulletGroup.position.set(-12.5, 0, 0);
-  const bulletGeo = createDin28011VesselGeometry(1.45, 7.6, 24);
+  lpgBulletGroup.position.set(-8.8, 0, -4.6);
+
+  const lpgSkidPad = new THREE.Mesh(new THREE.BoxGeometry(7.6, 0.45, 8.8), materials.panelWhite);
+  lpgSkidPad.position.y = 0.22;
+  lpgSkidPad.receiveShadow = true;
+  lpgBulletGroup.add(lpgSkidPad);
+
+  const bulletGeo = createDin28011VesselGeometry(1.45, 6.8, 24);
   bulletGeo.rotateX(Math.PI / 2);
-  for (const bx of [-2.2, 2.2]) {
+  for (const bx of [-2.1, 2.1]) {
     const bullet = new THREE.Mesh(bulletGeo, materials.panelWhite);
-    bullet.position.set(bx, 2.6, 0);
+    bullet.position.set(bx, 2.5, 0);
     bullet.castShadow = true;
     const band1 = new THREE.Mesh(new THREE.CylinderGeometry(1.49, 1.49, 0.35, 24), materials.gpCyan);
     band1.rotation.x = Math.PI / 2;
-    band1.position.set(bx, 2.6, -2.2);
+    band1.position.set(bx, 2.5, -2.0);
     const band2 = band1.clone();
-    band2.position.z = 2.2;
-    const saddleA = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.6, 0.6), materials.darkAccent);
-    saddleA.position.set(bx, 1.0, -2.5);
+    band2.position.z = 2.0;
+    const saddleA = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.6, 0.6), materials.darkAccent);
+    saddleA.position.set(bx, 1.0, -2.2);
     const saddleB = saddleA.clone();
-    saddleB.position.z = 2.5;
+    saddleB.position.z = 2.2;
     lpgBulletGroup.add(bullet, band1, band2, saddleA, saddleB);
   }
+
+  // Orthogonal manifold connecting both LPG bullets directly into the Main Overhead Pipe Rack (local Z = +6.6 -> World Z = 0, local Y = 2.8 -> World Y = 3.8)
+  const lpgManifold = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-2.1, 3.4, 1.8),
+      new THREE.Vector3(-2.1, 4.35, 1.8),
+      new THREE.Vector3(2.1, 4.35, 1.8),
+      new THREE.Vector3(2.1, 3.4, 1.8)
+    ],
+    0.2,
+    materials.gpCyan,
+    materials.darkAccent
+  );
+  const lpgRackTie = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(0, 4.35, 1.8),
+      new THREE.Vector3(0, 4.35, 4.6),
+      new THREE.Vector3(0, 2.8, 4.6),
+      new THREE.Vector3(0, 2.8, 6.6)
+    ],
+    0.22,
+    materials.safetyYellow,
+    materials.darkAccent
+  );
+  lpgBulletGroup.add(lpgManifold, lpgRackTie);
   tankGroup.add(lpgBulletGroup);
 
   root.add(tankGroup);
@@ -1104,6 +1491,40 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
     station.add(outPivot);
     loadingArmGroup.add(station);
   });
+
+  // Jetty Cryogenic Manifold Header connecting the Main Overhead Pipe Rack (54, 3.8, 0) directly into all 4 Loading Arm Standers
+  const jettyHeader = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(54.2, 3.8, -10.5),
+      new THREE.Vector3(54.2, 3.8, 10.5)
+    ],
+    0.42,
+    materials.panelWhite,
+    materials.darkAccent
+  );
+  // Tie-in connecting upper rack pipes (Y=4.85, Z=±0.55) directly down into the Jetty Manifold Header
+  const jettyUpperTie = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(53.8, 4.85, -0.55),
+      new THREE.Vector3(54.2, 4.85, -0.55),
+      new THREE.Vector3(54.2, 4.85, 0.55),
+      new THREE.Vector3(53.8, 4.85, 0.55)
+    ],
+    0.26,
+    materials.safetyYellow,
+    materials.darkAccent
+  );
+  const jettyUpperDrop = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(54.2, 4.85, 0),
+      new THREE.Vector3(54.2, 3.8, 0)
+    ],
+    0.28,
+    materials.safetyYellow,
+    materials.darkAccent
+  );
+  loadingArmGroup.add(jettyHeader, jettyUpperTie, jettyUpperDrop);
+
   termGroup.add(loadingArmGroup);
 
   // ==========================================
@@ -1319,7 +1740,19 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
   koSaddle1.position.set(1.5, 1.2, 3.8);
   const koSaddle2 = koSaddle1.clone();
   koSaddle2.position.x = 5.5;
-  flareGroup.add(koDrum, koSaddle1, koSaddle2);
+  // Overhead gas transfer line from KO Drum top shell directly into the central Flare Riser
+  const koToRiserPipe = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(2.2, 3.5, 3.8),
+      new THREE.Vector3(2.2, 4.8, 3.8),
+      new THREE.Vector3(0, 4.8, 3.8),
+      new THREE.Vector3(0, 4.8, 0)
+    ],
+    0.34,
+    materials.safetyYellow,
+    materials.darkAccent
+  );
+  flareGroup.add(koDrum, koSaddle1, koSaddle2, koToRiserPipe);
 
   // 4-Corner Tapered Structural Lattice Derrick ("Flare Towers Brisbane Refinery")
   const derrickHeight = 33.0;
@@ -1577,57 +2010,125 @@ export function buildCompleteLngPlant(materials: MaterialPalette): PlantBuildRes
     root.add(mesh);
   });
 
-  // Thermal Expansion U-Loops between major process blocks (authentic refinery piping hallmark)
+  // Thermal Expansion U-Loops between major process blocks with 90-degree forged elbows & outrigger T-supports
   for (const loopX of [-25, 0, 25]) {
-    const uLoopPts = [
-      new THREE.Vector3(loopX - 2.2, 4.85, -0.55),
-      new THREE.Vector3(loopX - 2.0, 4.85, -3.4),
-      new THREE.Vector3(loopX + 2.0, 4.85, -3.4),
-      new THREE.Vector3(loopX + 2.2, 4.85, -0.55)
-    ];
-    const uCurve = new THREE.CatmullRomCurve3(uLoopPts);
-    const uGeo = new THREE.TubeGeometry(uCurve, 32, 0.28, 12, false);
-    const uMesh = new THREE.Mesh(uGeo, materials.gpCyan);
-    uMesh.castShadow = true;
-    root.add(uMesh);
+    const uLoopRun = buildSegmentedPipeRun(
+      [
+        new THREE.Vector3(loopX - 2.1, 4.85, -0.55),
+        new THREE.Vector3(loopX - 2.1, 4.85, -3.1),
+        new THREE.Vector3(loopX + 2.1, 4.85, -3.1),
+        new THREE.Vector3(loopX + 2.1, 4.85, -0.55)
+      ],
+      0.28,
+      materials.gpCyan,
+      materials.darkAccent
+    );
+    root.add(uLoopRun);
+
+    // Outrigger T-stanchion support under each thermal expansion U-loop so it never hangs in mid-air
+    const loopPost = new THREE.Mesh(new THREE.BoxGeometry(0.26, 3.55, 0.26), materials.steelTruss);
+    loopPost.position.set(loopX, 2.78, -3.1);
+    const loopCrossBar = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.26, 0.36), materials.steelTruss);
+    loopCrossBar.position.set(loopX, 4.44, -3.1);
+    root.add(loopPost, loopCrossBar);
   }
 
-  // Flare Header Line connecting main rack (-38, 0) to Flare KO Drum (-78, -32)
-  const flareHeaderPts = [
-    new THREE.Vector3(-38, 4.85, -1.2),
-    new THREE.Vector3(-62, 4.85, -1.2),
-    new THREE.Vector3(-62, 4.85, -28.2),
-    new THREE.Vector3(-74.5, 3.5, -28.2)
-  ];
-  const flareHeaderCurve = new THREE.CatmullRomCurve3(flareHeaderPts);
-  const flareHeaderMesh = new THREE.Mesh(
-    new THREE.TubeGeometry(flareHeaderCurve, 64, 0.34, 12, false),
-    materials.safetyYellow
+  // Orthogonal Branch Tie-Ins from Main Overhead Pipe Rack into Node 1 & Node 2 columns
+  const node1TieIn = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-31.6, 3.8, 0),
+      new THREE.Vector3(-31.6, 3.8, -4.5)
+    ],
+    0.32,
+    materials.gpBlue,
+    materials.darkAccent
   );
-  flareHeaderMesh.castShadow = true;
-  root.add(flareHeaderMesh);
+  const node2TieNorth = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-16.8, 3.8, 0),
+      new THREE.Vector3(-16.8, 3.8, -5.2)
+    ],
+    0.32,
+    materials.gpBlue,
+    materials.darkAccent
+  );
+  const node2TieSouth = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-16.8, 3.8, 0),
+      new THREE.Vector3(-16.8, 3.8, 4.8)
+    ],
+    0.3,
+    materials.gpCyan,
+    materials.darkAccent
+  );
+  const node2TieEast = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-7.5, 3.8, 0),
+      new THREE.Vector3(-7.5, 3.8, -5.5)
+    ],
+    0.28,
+    materials.panelWhite,
+    materials.darkAccent
+  );
+  root.add(node1TieIn, node2TieNorth, node2TieSouth, node2TieEast);
+
+  // Orthogonal Flare Header Line connecting main rack (-38, 4.85, -0.55) to Flare KO Drum (-74.5, 3.5, -28.2)
+  const flareHeaderRun = buildSegmentedPipeRun(
+    [
+      new THREE.Vector3(-38, 4.85, -0.55),
+      new THREE.Vector3(-62, 4.85, -0.55),
+      new THREE.Vector3(-62, 4.85, -28.2),
+      new THREE.Vector3(-70.8, 4.85, -28.2),
+      new THREE.Vector3(-70.8, 3.5, -28.2),
+      new THREE.Vector3(-74.5, 3.5, -28.2)
+    ],
+    0.34,
+    materials.safetyYellow,
+    materials.darkAccent
+  );
+  root.add(flareHeaderRun);
+
+  // Steel T-Stanchions supporting the Flare Header Line along its entire route
+  const flareStanchions: Array<[number, number]> = [
+    [-46, -0.55],
+    [-54, -0.55],
+    [-62, -0.55],
+    [-62, -10.0],
+    [-62, -19.0],
+    [-62, -28.2],
+    [-68, -28.2]
+  ];
+  flareStanchions.forEach(([sx, sz]) => {
+    const sPost = new THREE.Mesh(new THREE.BoxGeometry(0.26, 3.5, 0.26), materials.steelTruss);
+    sPost.position.set(sx, 2.75, sz);
+    const sCap = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.24, 0.9), materials.steelTruss);
+    sCap.position.set(sx, 4.39, sz);
+    root.add(sPost, sCap);
+  });
 
   // Structural Multi-Tier Portal Bents with Gussets & ASME Pipe Shoes
+  // Lower pipes at Y=3.8 (r=0.34..0.52) sit flush on lowerBeam (World Y=3.26, top at 3.42)
+  // Upper pipes at Y=4.85 (r=0.24..0.28) sit flush on upperBeam (World Y=4.45, top at 4.59)
   for (let px = -36; px <= 52; px += 6.2) {
     const bent = new THREE.Group();
     bent.position.set(px, 1.0, 0);
 
-    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 4.5, 0.28), materials.steelTruss);
-    legL.position.set(0, 2.25, -1.65);
+    const legL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 4.1, 0.28), materials.steelTruss);
+    legL.position.set(0, 2.05, -1.65);
     legL.castShadow = true;
     const legR = legL.clone();
     legR.position.z = 1.65;
 
     const lowerBeam = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.32, 3.7), materials.steelTruss);
-    lowerBeam.position.set(0, 3.2, 0);
+    lowerBeam.position.set(0, 2.26, 0);
 
     const upperBeam = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 3.5), materials.steelTruss);
-    upperBeam.position.set(0, 4.45, 0);
+    upperBeam.position.set(0, 3.45, 0);
 
-    // Knee braces
-    const braceL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.9, 0.18), materials.safetyYellow);
+    // Knee braces supporting lowerBeam
+    const braceL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.85, 0.18), materials.safetyYellow);
     braceL.rotation.x = Math.PI / 4;
-    braceL.position.set(0, 2.85, -1.25);
+    braceL.position.set(0, 1.9, -1.25);
     const braceR = braceL.clone();
     braceR.rotation.x = -Math.PI / 4;
     braceR.position.z = 1.25;
